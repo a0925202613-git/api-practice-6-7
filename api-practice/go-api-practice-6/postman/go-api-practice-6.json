@@ -1,0 +1,96 @@
+{
+	"info": {
+		"_postman_id": "go-api-practice-6",
+		"name": "Go API Practice 6 - 餐廳菜單與訂單",
+		"description": "菜單 (menus) 與訂單 (orders)。GET 不需 token；POST/PATCH 需 Authorization: Bearer {{token}}。訂單支援 ?status=pending|completed|cancelled。",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{ "key": "baseUrl", "value": "http://localhost:8081" },
+		{ "key": "token", "value": "demo-token-123" },
+		{ "key": "menuId", "value": "1" },
+		{ "key": "orderId", "value": "1" }
+	],
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "GET /api/me (帶 token)",
+					"request": {
+						"method": "GET",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+						"url": "{{baseUrl}}/api/me"
+					}
+				}
+			]
+		},
+		{
+			"name": "菜單 (menus)",
+			"item": [
+				{ "name": "取得所有菜單", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/menus" } },
+				{ "name": "取得單一菜單", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/menus/{{menuId}}" },
+				{
+					"name": "新增菜單",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Authorization", "value": "Bearer {{token}}" }
+						],
+						"body": { "mode": "raw", "raw": "{\n  \"name\": \"蛋花湯\",\n  \"category\": \"湯品\",\n  \"price\": 30\n}" },
+						"url": "{{baseUrl}}/api/menus"
+					}
+				},
+				{
+					"name": "更新菜單",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Authorization", "value": "Bearer {{token}}" }
+						],
+						"body": { "mode": "raw", "raw": "{\n  \"name\": \"招牌滷肉飯（大）\",\n  \"category\": \"主食\",\n  \"price\": 55\n}" },
+						"url": "{{baseUrl}}/api/menus/{{menuId}}"
+					}
+				},
+				{
+					"name": "刪除菜單",
+					"request": {
+						"method": "DELETE",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+						"url": "{{baseUrl}}/api/menus/{{menuId}}"
+					}
+				}
+			]
+		},
+		{
+			"name": "訂單 (orders)",
+			"item": [
+				{ "name": "取得所有訂單", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders" } },
+				{ "name": "取得訂單 (status=pending)", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders?status=pending" } },
+				{ "name": "取得單一訂單", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders/{{orderId}}" },
+				{
+					"name": "新增訂單",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Authorization", "value": "Bearer {{token}}" }
+						],
+						"body": { "mode": "raw", "raw": "{\n  \"menu_id\": 1,\n  \"quantity\": 2\n}" },
+						"url": "{{baseUrl}}/api/orders"
+					}
+				},
+				{
+					"name": "取消訂單",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+						"url": "{{baseUrl}}/api/orders/{{orderId}}/cancel"
+					}
+				}
+			]
+		}
+	]
+}
