@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	"go-api-practice-6/database"
 	"go-api-practice-6/models"
 
 	"github.com/gin-gonic/gin"
@@ -14,11 +15,46 @@ import (
 // 成功時回傳 200 與訂單陣列（含菜單名稱）；沒有符合的訂單就回傳空陣列。
 func GetOrders(c *gin.Context) {
 	status := c.Query("status") // pending | completed | cancelled，空字串表示全部
-	_ = status
-	// TODO: 從 query 讀取 status，判斷是否為有效值（pending/completed/cancelled），決定查詢時要不要加上「只查該狀態」
-	// TODO: 查詢訂單時要一併取得每筆訂單對應的菜單名稱，結果依訂單 id 排序
-	// TODO: 把結果組成訂單列表（含菜單名稱），回傳 200
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 GetOrders（含 status 篩選）"})
+
+	//基礎的查詢
+	query := "SELECT o.id, o.menu_id, m.name, o.quantity, o.status, o.created_at, o.updated_at FROM orders o JOIN menus m ON o.menu_id = m.id"
+
+	// 準備一個百寶袋 args 來裝參數 (裡面裝什麼型態都可以，所以用 any 或 interface{})
+	var args []interface{}
+
+	//檢查有沒有傳入有效的 status，如果有就加上 WHERE 條件
+	if status == "pending" || status == "completed" || status == "cancelled" {
+		//把 WHERE 條件拼接到 query 字串後面
+		query += " WHERE o.status = $1"
+		//把 status 這個變數放進百寶袋 args 裡面
+		args = append(args, status)
+	}
+	// 最後都要加上排序
+	query += " ORDER BY o.id ASC"
+
+	rows, err := database.DB.Query(query, args...)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	defer rows.Close()
+
+	orders := make([]models.OrderWithMenuName, 0)
+	for rows.Next() {
+		var o models.OrderWithMenuName
+		if err := rows.Scan(&o.ID, &o.MenuID, &o.MenuName, &o.Quantity, &o.Status, &o.CreatedAt, &o.UpdatedAt); err != nil {
+			respondError(c, err)
+			return
+		}
+		orders = append(orders, o)
+	}
+	if err := rows.Err(); err != nil {
+		respondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, orders)
+
 }
 
 // GetOrderByID 依網址上的 id 取得單一筆訂單。
