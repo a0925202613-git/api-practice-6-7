@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"net/http"
 
 	"go-api-practice-6/database"
@@ -32,7 +33,7 @@ func GetOrders(c *gin.Context) {
 	// 最後都要加上排序
 	query += " ORDER BY o.id ASC"
 
-	rows, err := database.DB.Query(query, args...)
+	rows, err := database.DB.Query(query, args...) // args... 是把 args 這個切片裡的元素一個一個拿出來當作參數傳給 Query
 	if err != nil {
 		respondError(c, err)
 		return
@@ -65,10 +66,31 @@ func GetOrderByID(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_ = id
-	// TODO: 用 id 查出一筆訂單，並一併取得該訂單對應的菜單名稱
-	// TODO: 查不到就回 404（例如 id 不存在）；查到就回 200 與該筆訂單資料（含菜單名稱）
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 GetOrderByID"})
+
+	query := "SELECT o.id, o.menu_id, m.name, o.quantity, o.status, o.created_at, o.updated_at FROM orders o JOIN menus m ON o.menu_id = m.id WHERE o.id = $1"
+
+	//準備空箱子來裝查詢結果
+	var o models.OrderWithMenuName
+
+	//執行查詢，並把結果掃描到剛剛準備的空箱子裡面
+	if err := database.DB.QueryRow(query, id).Scan(
+		&o.ID,
+		&o.MenuID,
+		&o.MenuName,
+		&o.Quantity,
+		&o.Status,
+		&o.CreatedAt,
+		&o.UpdatedAt,
+	); err != nil {
+		if err == sql.ErrNoRows { //找不到對應的訂單
+			c.JSON(http.StatusNotFound, gin.H{"error": "訂單不存在"})
+		} else {
+			respondError(c, err) //其他查詢錯誤
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, o)
 }
 
 // CreateOrder 新增一筆訂單（此 API 需帶 token）。
