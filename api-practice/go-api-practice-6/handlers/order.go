@@ -67,7 +67,9 @@ func GetOrderByID(c *gin.Context) {
 		return
 	}
 
-	query := "SELECT o.id, o.menu_id, m.name, o.quantity, o.status, o.created_at, o.updated_at FROM orders o JOIN menus m ON o.menu_id = m.id WHERE o.id = $1"
+	query := `SELECT o.id, o.menu_id, m.name, o.quantity, o.status, o.created_at, o.updated_at 
+	 FROM orders o JOIN menus m ON o.menu_id = m.id 
+	 WHERE o.id = $1`
 
 	//準備空箱子來裝查詢結果
 	var o models.OrderWithMenuName
@@ -100,21 +102,62 @@ func GetOrderByID(c *gin.Context) {
 func CreateOrder(c *gin.Context) {
 	var input models.Order
 	if err := c.ShouldBindJSON(&input); err != nil {
-		status, body := formatValidationError(err) 
+		status, body := formatValidationError(err)
 		c.JSON(status, body)
 		return
 	}
+
+	// 檢查 menu_id 是否存在
 	if !ValidateMenuExists(c, input.MenuID) {
 		return
 	}
 
-	query := "INSERT INTO orders (menu_id, quantity, status) VALUES ($1, $2, 'pending') RETURNING id, menu_id, quantity, status, created_at, updated_at"
-	
+	query := "INSERT INTO orders (menu_id, quantity, status) VALUES ($1, $2, $3) RETURNING id, menu_id, quantity, status, created_at, updated_at"
+
 	//準備空箱子來裝新增後的訂單資料
 	var o models.Order
 
 	//執行新增，並把新增後的訂單資料掃描到剛剛準備的空箱子裡面
-	if err := database.DB.QueryRow(query, input.MenuID, input.Quantity).Scan(
+	if err := database.DB.QueryRow(query, input.MenuID, input.Quantity, input.Status).Scan(
+		&o.ID,
+		&o.MenuID,
+		&o.Quantity,
+		&o.Status,
+		&o.CreatedAt,
+		&o.UpdatedAt,
+	); err != nil {
+		respondError(c, err)
+		return
+	}
+
+	//新增成功，回傳 201 與剛建立的那筆訂單資料
+	c.JSON(http.StatusCreated, o)
+}
+
+func UpdateOrder(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+
+	var input models.Order
+	if err := c.ShouldBindJSON(&input); err != nil {
+		status, body := formatValidationError(err)
+		c.JSON(status, body)
+		return
+	}
+
+	if !ValidateMenuExists(c, input.MenuID) {
+		return
+	}
+
+	query := "UPDATE orders SET menu_id = $1, quantity = $2, status = $3, updated_at = NOW() WHERE id = $4 RETURNING id, menu_id, quantity, status, created_at, updated_at"
+
+	//準備空箱子來裝新增後的訂單資料
+	var o models.Order
+
+	//執行新增，並把新增後的訂單資料掃描到剛剛準備的空箱子裡面
+	if err := database.DB.QueryRow(query, input.MenuID, input.Quantity, input.Status, id).Scan(
 		&o.ID,
 		&o.MenuID,
 		&o.Quantity,
@@ -142,22 +185,73 @@ func CancelOrder(c *gin.Context) {
 	if !ValidateOrderCanCancel(c, id) {
 		return
 	}
-	// TODO: 將該筆訂單狀態改為「已取消」，回傳 200（可帶更新後資料或成功訊息）
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 CancelOrder（僅 pending 可取消）"})
+
+	query := "UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1 RETURNING id, menu_id, quantity, status, created_at, updated_at"
+
+	//準備空箱子來裝更新後的訂單資料
+	var o models.Order
+
+	//執行更新，並把更新後的訂單資料掃描到剛剛準備的空箱子裡面
+	if err := database.DB.QueryRow(query, id).Scan(
+		&o.ID,
+		&o.MenuID,
+		&o.Quantity,
+		&o.Status,
+		&o.CreatedAt,
+		&o.UpdatedAt,
+	); err != nil {
+		if err == sql.ErrNoRows { //找不到對應的訂單
+			c.JSON(http.StatusNotFound, gin.H{"error": "訂單不存在"})
+		} else {
+			respondError(c, err) //其他查詢錯誤
+		}
+		return
+	}
+
+	//取消成功，回傳 200 與更新後的訂單資料
+	c.JSON(http.StatusOK, o)
 }
 
 // ValidateMenuExists 檢查 menuID 是否在菜單表內存在。
 // 若不存在則已寫入 c.JSON(400, gin.H{"error": "menu_id 不存在"}) 並回傳 false；存在則回傳 true。
 // 使用於 CreateOrder：通過後才新增訂單。
 func ValidateMenuExists(c *gin.Context, menuID int) bool {
-	// TODO: 實作
-	return false
+	var id int
+	query := "SELECT id FROM menus WHERE id = $1"
+	if err := database.DB.QueryRow(query, menuID).Scan(
+		&id,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "menu_id 不存在"})
+		} else {
+			respondError(c, err)
+		}
+		return false
+	}
+
+	return true
 }
 
 // ValidateOrderCanCancel 檢查該訂單是否存在且狀態為「待處理」，才允許取消。
 // 若訂單不存在則已寫入 404 並回傳 false；若存在但狀態不是待處理則已寫入 400「僅能取消待處理中的訂單」並回傳 false；可取消則回傳 true。
 // 使用於 CancelOrder：通過後才將訂單狀態改為已取消。
 func ValidateOrderCanCancel(c *gin.Context, orderID int) bool {
-	// TODO: 實作
-	return false
+	var s string
+	query := "SELECT status FROM orders WHERE id = $1"
+	if err := database.DB.QueryRow(query, orderID).Scan(
+		&s,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "訂單不存在"})
+		} else {
+			respondError(c, err)
+		}
+		return false
+	} else {
+		if s != "pending" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "僅能取消待處理中的訂單"})
+			return false
+		}
+	}
+	return true
 }

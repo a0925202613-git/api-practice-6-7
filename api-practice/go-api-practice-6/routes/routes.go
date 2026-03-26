@@ -28,6 +28,7 @@ func Setup(r *gin.Engine) {
 		protected.DELETE("/menus/:id", handlers.DeleteMenu)
 		protected.POST("/orders", handlers.CreateOrder)
 		protected.PATCH("/orders/:id/cancel", handlers.CancelOrder)
+		protected.PUT("/orders/:id", handlers.UpdateOrder)
 	}
 
 	api.GET("/me", middleware.TokenAuth(), func(c *gin.Context) {

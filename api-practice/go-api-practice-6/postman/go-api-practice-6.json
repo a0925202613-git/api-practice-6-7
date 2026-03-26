@@ -29,7 +29,7 @@
 			"name": "菜單 (menus)",
 			"item": [
 				{ "name": "取得所有菜單", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/menus" } },
-				{ "name": "取得單一菜單", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/menus/{{menuId}}" },
+				{ "name": "取得單一菜單", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/menus/{{menuId}}" }},
 				{
 					"name": "新增菜單",
 					"request": {
@@ -69,7 +69,7 @@
 			"item": [
 				{ "name": "取得所有訂單", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders" } },
 				{ "name": "取得訂單 (status=pending)", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders?status=pending" } },
-				{ "name": "取得單一訂單", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders/{{orderId}}" },
+				{ "name": "取得單一訂單", "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/orders/{{orderId}}" }},
 				{
 					"name": "新增訂單",
 					"request": {

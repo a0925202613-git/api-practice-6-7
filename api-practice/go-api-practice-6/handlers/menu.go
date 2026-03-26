@@ -109,8 +109,10 @@ func UpdateMenu(c *gin.Context) {
 		return
 	}
 
-	query := "UPDATE menus SET name = $1, category = $2, price = $3, updated_at = NOW() WHERE id =$4 RETURNING id, name, category, price, created_at, updated_at"
+	query := "UPDATE menus SET name = $1, category = $2, price = $3, updated_at = NOW() WHERE id = $4 RETURNING id, name, category, price, created_at, updated_at"
+
 	var m models.Menu
+
 	row := database.DB.QueryRow(query, input.Name, input.Category, input.Price, id)
 	if err := row.Scan(&m.ID, &m.Name, &m.Category, &m.Price, &m.CreatedAt, &m.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
@@ -132,7 +134,7 @@ func DeleteMenu(c *gin.Context) {
 		return
 	}
 
-	query := "DELETE FROM menus WHERE id = $1 RETURNING id"
+	query := "DELETE FROM menus WHERE id = $1"
 
 	result, err := database.DB.Exec(query, id)
 	if err != nil {

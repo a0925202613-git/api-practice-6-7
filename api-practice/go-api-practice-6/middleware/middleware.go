@@ -22,7 +22,7 @@ const DemoToken = "demo-token-123"
 
 func TokenAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
+		authHeader := c.GetHeader("Authorization") // 從 Header 取出 Authorization 欄位
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "請在 Header 帶上 Authorization: Bearer <你的token>",
