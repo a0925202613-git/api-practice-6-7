@@ -100,15 +100,34 @@ func GetOrderByID(c *gin.Context) {
 func CreateOrder(c *gin.Context) {
 	var input models.Order
 	if err := c.ShouldBindJSON(&input); err != nil {
-		status, body := formatValidationError(err)
+		status, body := formatValidationError(err) 
 		c.JSON(status, body)
 		return
 	}
 	if !ValidateMenuExists(c, input.MenuID) {
 		return
 	}
-	// TODO: 新增一筆訂單（狀態為待處理），取得建立後的完整一筆資料，回傳 201 與該筆資料
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 CreateOrder（含 menu 存在檢查）"})
+
+	query := "INSERT INTO orders (menu_id, quantity, status) VALUES ($1, $2, 'pending') RETURNING id, menu_id, quantity, status, created_at, updated_at"
+	
+	//準備空箱子來裝新增後的訂單資料
+	var o models.Order
+
+	//執行新增，並把新增後的訂單資料掃描到剛剛準備的空箱子裡面
+	if err := database.DB.QueryRow(query, input.MenuID, input.Quantity).Scan(
+		&o.ID,
+		&o.MenuID,
+		&o.Quantity,
+		&o.Status,
+		&o.CreatedAt,
+		&o.UpdatedAt,
+	); err != nil {
+		respondError(c, err)
+		return
+	}
+
+	//新增成功，回傳 201 與剛建立的那筆訂單資料
+	c.JSON(http.StatusCreated, o)
 }
 
 // CancelOrder 依網址上的 id 取消一筆訂單（此 API 需帶 token）。
