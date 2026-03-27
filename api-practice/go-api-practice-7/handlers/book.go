@@ -14,6 +14,12 @@ import (
 func GetBooks(c *gin.Context) {
 	available := c.Query("available") // "true" | "false" | ""
 	_ = available
+	query := "SELECT id, title, isbn, available, created_at, updated_at FROM books"
+
+	var args []interface{}
+	
+	if available == "true" || available == "false" {
+		
 	// TODO: 從 query 讀取 available，判斷是否為 "true" 或 "false"，決定查詢時要不要只篩選「可借閱」或「已借出」
 	// TODO: 查詢書籍，結果依 id 排序，組出列表
 	// TODO: 回傳 200 與列表（無資料就空陣列）
