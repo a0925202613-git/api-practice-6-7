@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"database/sql"
 	"net/http"
 
+	"go-api-practice-7/database"
 	"go-api-practice-7/models"
 
 	"github.com/gin-gonic/gin"
@@ -13,17 +15,46 @@ import (
 // 列表依書籍 id 排序。成功時回傳 200 與書籍陣列；沒有符合的書就回傳空陣列。
 func GetBooks(c *gin.Context) {
 	available := c.Query("available") // "true" | "false" | ""
-	_ = available
-	query := "SELECT id, title, isbn, available, created_at, updated_at FROM books"
 
-	var args []interface{}
-	
-	if available == "true" || available == "false" {
-		
-	// TODO: 從 query 讀取 available，判斷是否為 "true" 或 "false"，決定查詢時要不要只篩選「可借閱」或「已借出」
-	// TODO: 查詢書籍，結果依 id 排序，組出列表
-	// TODO: 回傳 200 與列表（無資料就空陣列）
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 GetBooks（含 available 篩選）"})
+	query := "SELECT id, title, isbn, available, created_at, updated_at FROM books"
+	var args []interface{} // 用來裝參數的百寶袋
+
+	// 判斷 available 的值，決定要不要加上 WHERE 條件
+	if available == "true" {
+		query += " WHERE available = $1" // 加上 WHERE 條件
+		args = append(args, true)        // 把 true 放進參數百寶袋
+	} else if available == "false" {
+		query += " WHERE available = $1" // 加上 WHERE 條件
+		args = append(args, false)       // 把 false 放進參數百寶袋
+	}
+
+	query += " ORDER BY id" // 依 id 排序
+
+	books := []models.Book{} //也可使用 make([]models.Book, 0)，兩者都可以建立一個空的書籍切片
+
+	// TODO: 執行查詢，將結果存入 books 變數
+	rows, err := database.DB.Query(query, args...) // args... 是把 args 這個切片裡的元素一個一個拿出來當作參數傳給 Query
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	defer rows.Close()
+
+	// 用迴圈把查詢結果掃描到 books 這個切片裡面
+	for rows.Next() {
+		var b models.Book //準備一個空箱子來裝每一筆書籍資料
+		if err := rows.Scan(&b.ID, &b.Title, &b.ISBN, &b.Available, &b.CreatedAt, &b.UpdatedAt); err != nil {
+			respondError(c, err)
+			return
+		}
+		books = append(books, b)
+	}
+	if err := rows.Err(); err != nil {
+		respondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, books)
 }
 
 // GetBookByID 依網址上的 id 取得單一筆書籍。
@@ -33,10 +64,24 @@ func GetBookByID(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_ = id
+
 	// TODO: 用 id 查出一筆書籍
+	query := "SELECT id, title, isbn, available, created_at, updated_at FROM books WHERE id = $1"
+
+	var b models.Book //準備一個空箱子來裝查詢結果
+
 	// TODO: 查不到就回 404；查到就回 200 與該筆書籍的完整資料
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 GetBookByID"})
+	err := database.DB.QueryRow(query, id).Scan(&b.ID, &b.Title, &b.ISBN, &b.Available, &b.CreatedAt, &b.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows { //找不到對應的書籍
+			c.JSON(http.StatusNotFound, gin.H{"error": "書籍不存在"})
+		} else {
+			respondError(c, err) //其他查詢錯誤
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, b)
 }
 
 // CreateBook 新增一筆書籍（此 API 需帶 token）。
@@ -49,10 +94,16 @@ func CreateBook(c *gin.Context) {
 		c.JSON(status, body)
 		return
 	}
-	_ = input
-	// TODO: 依 request 新增一筆書籍（可借閱狀態預設為 true），取得建立後的那一筆完整資料
-	// TODO: 回傳 201 與該筆資料
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 CreateBook"})
+
+	query := "INSERT INTO books (title, isbn) VALUES ($1, $2) RETURNING id, title, isbn, available, created_at, updated_at"
+
+	err := database.DB.QueryRow(query, input.Title, input.ISBN).Scan(&input.ID, &input.Title, &input.ISBN, &input.Available, &input.CreatedAt, &input.UpdatedAt)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, input)
 }
 
 // UpdateBook 依網址上的 id 更新一筆書籍（此 API 需帶 token）。
