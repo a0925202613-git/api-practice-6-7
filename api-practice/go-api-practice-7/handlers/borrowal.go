@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"database/sql"
 	"net/http"
 
+	"go-api-practice-7/database"
 	"go-api-practice-7/models"
 
 	"github.com/gin-gonic/gin"
@@ -13,8 +15,37 @@ import (
 // 成功時回傳 200 與借閱紀錄陣列（含書名）；若沒有資料就回傳空陣列。注意：歸還時間可能尚未填寫（未還書），需能正確處理空值。
 func GetBorrowals(c *gin.Context) {
 	// TODO: 查詢所有借閱紀錄，一併取得每筆對應的書名，結果依借閱 id 排序
-	// TODO: 組出列表（歸還時間可能為空），回傳 200（無資料就空陣列）
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 GetBorrowals"})
+	query := `
+	SELECT b.id, b.book_id, bk.title, b.user_name, b.borrowed_at, b.returned_at
+	FROM borrowals b
+	JOIN books bk ON b.book_id = bk.id
+	ORDER BY b.id
+`
+
+	borrowals := []models.BorrowalWithBookTitle{}
+
+	rows, err := database.DB.Query(query)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var b models.BorrowalWithBookTitle
+		if err := rows.Scan(&b.ID, &b.BookID, &b.BookTitle, &b.UserName, &b.BorrowedAt, &b.ReturnedAt); err != nil {
+			respondError(c, err)
+			return
+		}
+		borrowals = append(borrowals, b)
+	}
+
+	if err := rows.Err(); err != nil {
+		respondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, borrowals)
 }
 
 // GetBorrowalByID 依網址上的 id 取得單一筆借閱紀錄。
@@ -24,10 +55,28 @@ func GetBorrowalByID(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_ = id
+
 	// TODO: 用 id 查出一筆借閱紀錄，並一併取得該筆對應的書名
+	query := `
+	SELECT b.id, b.book_id, bk.title, b.user_name, b.borrowed_at, b.returned_at
+	FROM borrowals b
+	JOIN books bk ON b.book_id = bk.id
+	WHERE b.id = $1
+`
+	var b models.BorrowalWithBookTitle
+
+	err := database.DB.QueryRow(query, id).Scan(&b.ID, &b.BookID, &b.BookTitle, &b.UserName, &b.BorrowedAt, &b.ReturnedAt)
+	if err != nil {
+		if err == sql.ErrNoRows { //找不到對應的借閱紀錄
+			c.JSON(http.StatusNotFound, gin.H{"error": "借閱紀錄不存在"})
+		} else {
+			respondError(c, err) //其他查詢錯誤
+		}
+		return
+	}
+
 	// TODO: 查不到就回 404；查到就回 200 與該筆借閱資料（含書名）
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 GetBorrowalByID"})
+	c.JSON(http.StatusOK, b)
 }
 
 // CreateBorrowal 建立一筆借閱紀錄（借書）（此 API 需帶 token）。
@@ -44,6 +93,27 @@ func CreateBorrowal(c *gin.Context) {
 	if !ValidateBookAvailable(c, input.BookID) {
 		return
 	}
+
+	//1.開啟資料庫交易
+	tx, err := database.DB.Begin()
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	//設下安全網：如果中途發生錯誤，回滾交易
+	defer tx.Rollback()
+
+	//2.新增借閱紀錄
+	insertQuery := "INSERT INTO borrowals (book_id, user_name) VALUES ($1, $2) RETURNING id, book_id, user_name, borrowed_at, returned_at"
+	var newBorrowal models.BorrowalWithBookTitle
+	err = tx.QueryRow(insertQuery, input.BookID, input.UserName).Scan(&newBorrowal.ID, &newBorrowal.BookID, &newBorrowal.UserName, &newBorrowal.BorrowedAt, &newBorrowal.ReturnedAt)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+
+	//3.把該書改為已借出
+
 	// TODO: 在同一筆交易內新增借閱紀錄，並把該書改為已借出，取得建立後的借閱資料（含書名），回傳 201
 	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 CreateBorrowal（需檢查書可借閱）"})
 }
