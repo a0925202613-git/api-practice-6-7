@@ -121,10 +121,26 @@ func UpdateBook(c *gin.Context) {
 		c.JSON(status, body)
 		return
 	}
-	_, _ = id, input
+	
+	query := `
+		UPDATE books SET title = $1, isbn = $2, updated_at = NOW() 
+		WHERE id = $3 
+		RETURNING id, title, isbn, available, created_at, updated_at
+	`
+
+	err := database.DB.QueryRow(query, input.Title, input.ISBN, id).Scan(&input.ID, &input.Title, &input.ISBN, &input.Available, &input.CreatedAt, &input.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows { // 沒有該 id 的書籍
+			c.JSON(http.StatusNotFound, gin.H{"error": "書籍不存在"})
+		} else {
+			respondError(c, err) // 其他更新錯誤
+		}
+		return
+	}
+	
 	// TODO: 用 id 找到該筆書籍，用 request 的 title、isbn 更新（可借閱狀態可不在此改）
 	// TODO: 若沒有該 id（更新影響筆數為 0），回傳 404；有更新到就回 200 與更新後的該筆完整資料
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 UpdateBook"})
+	c.JSON(http.StatusOK, input)
 }
 
 // DeleteBook 依網址上的 id 刪除一筆書籍（此 API 需帶 token）。
@@ -134,8 +150,23 @@ func DeleteBook(c *gin.Context) {
 	if !ok {
 		return
 	}
-	_ = id
-	// TODO: 用 id 刪除該筆書籍
-	// TODO: 若沒有該 id（刪除影響筆數為 0），回傳 404；有刪到就回 200 與成功訊息
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 DeleteBook"})
+	
+	query := "DELETE FROM books WHERE id = $1"
+
+	result, err := database.DB.Exec(query, id)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	if rowsAffected == 0 { // 没有該 id 的書籍
+		c.JSON(http.StatusNotFound, gin.H{"error": "書籍不存在"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "書籍已刪除"})
 }
