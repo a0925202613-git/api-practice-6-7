@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"net/http"
+	"time"
 
 	"go-api-practice-7/database"
 	"go-api-practice-7/models"
@@ -103,9 +104,10 @@ func CreateBorrowal(c *gin.Context) {
 	//設下安全網：如果中途發生錯誤，回滾交易
 	defer tx.Rollback()
 
+	var newBorrowal models.BorrowalWithBookTitle
+
 	//2.新增借閱紀錄
 	insertQuery := "INSERT INTO borrowals (book_id, user_name) VALUES ($1, $2) RETURNING id, book_id, user_name, borrowed_at, returned_at"
-	var newBorrowal models.BorrowalWithBookTitle
 	err = tx.QueryRow(insertQuery, input.BookID, input.UserName).Scan(&newBorrowal.ID, &newBorrowal.BookID, &newBorrowal.UserName, &newBorrowal.BorrowedAt, &newBorrowal.ReturnedAt)
 	if err != nil {
 		respondError(c, err)
@@ -113,9 +115,21 @@ func CreateBorrowal(c *gin.Context) {
 	}
 
 	//3.把該書改為已借出
+	updateBookQuery := "UPDATE books SET available = false WHERE id = $1 RETURNING title"
+	err = tx.QueryRow(updateBookQuery, input.BookID).Scan(&newBorrowal.BookTitle)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
 
-	// TODO: 在同一筆交易內新增借閱紀錄，並把該書改為已借出，取得建立後的借閱資料（含書名），回傳 201
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 CreateBorrowal（需檢查書可借閱）"})
+	//4.提交交易
+	if err := tx.Commit(); err != nil {
+		respondError(c, err)
+		return
+	}
+
+	//5.回傳 201 與剛建立的借閱紀錄（含書名）
+	c.JSON(http.StatusCreated, newBorrowal)
 }
 
 // ReturnBorrowal 依網址上的 id 將一筆借閱紀錄標記為「已歸還」（還書）（此 API 需帶 token）。
@@ -130,22 +144,95 @@ func ReturnBorrowal(c *gin.Context) {
 	if !ValidateBorrowalCanReturn(c, id) {
 		return
 	}
-	// TODO: 寫入該筆的歸還時間，並把對應的書改回可借閱，回傳 200（可帶更新後資料或成功訊息）
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "請實作 ReturnBorrowal（僅未歸還者可還書）"})
+
+	//1.開啟資料庫交易
+	tx, err := database.DB.Begin()
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+
+	//設下安全網：如果中途發生錯誤，回滾交易
+	defer tx.Rollback()
+
+
+	//2.寫入該筆借閱的歸還時間
+	updateQuery := `
+		UPDATE borrowals 
+		SET returned_at = NOW()
+		WHERE id = $1 
+		RETURNING book_id
+	`
+	var bookID int
+	err = tx.QueryRow(updateQuery, id).Scan(&bookID)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	
+	//3.把對應的書改回可借閱
+	updateBookQuery := "UPDATE books SET available = true WHERE id = $1"
+	_, err = tx.Exec(updateBookQuery, bookID)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+
+	//4.提交交易
+	if err := tx.Commit(); err != nil {
+		respondError(c, err)
+		return
+	}
+
+	//5.回傳 200 與簡單成功訊息
+	c.JSON(http.StatusOK, gin.H{"message": "returned"})
 }
 
 // ValidateBookAvailable 檢查該書是否存在且狀態為「可借閱」。
 // 若書不存在或已被借出則已寫入 c.JSON(400, gin.H{"error": "此書目前已被借出或不存在"}) 並回傳 false；可借閱則回傳 true。
 // 使用於 CreateBorrowal：通過後才新增借閱紀錄並將書改為已借出。
 func ValidateBookAvailable(c *gin.Context, bookID int) bool {
-	// TODO: 實作
-	return false
+	var available bool
+	
+	//去資料庫查這本書的available狀態
+	query := "SELECT available FROM books WHERE id = $1"
+	err := database.DB.QueryRow(query, bookID).Scan(&available)
+	if err != nil {
+		if err == sql.ErrNoRows { //書不存在
+			c.JSON(http.StatusBadRequest, gin.H{"error": "此書目前已被借出或不存在"})
+			return false
+		}
+		respondError(c, err)
+		return false
+	}
+
+	if !available { //書存在但不可借閱
+		c.JSON(http.StatusBadRequest, gin.H{"error": "此書目前已被借出或不存在"})
+		return false
+	}
+	return true
 }
 
 // ValidateBorrowalCanReturn 檢查該筆借閱是否存在且「尚未歸還」（歸還時間為空），才允許還書。
 // 若借閱不存在則已寫入 404 並回傳 false；若已歸還則已寫入 400「此筆借閱已歸還」並回傳 false；可還書則回傳 true。
 // 使用於 ReturnBorrowal：通過後才寫入歸還時間並將書改回可借閱。
 func ValidateBorrowalCanReturn(c *gin.Context, borrowalID int) bool {
-	// TODO: 實作
-	return false
+	var returnedAt *time.Time //關鍵：使用指標來接資料，這樣遇到資料庫的 NULL 才會變成 nil，程式才不會崩潰
+	
+	query := "SELECT returned_at FROM borrowals WHERE id = $1"
+	err := database.DB.QueryRow(query, borrowalID).Scan(&returnedAt)
+	if err != nil {
+		if err == sql.ErrNoRows { //借閱紀錄不存在
+			c.JSON(http.StatusNotFound, gin.H{"error": "借閱紀錄不存在"})
+			return false
+		}
+		respondError(c, err)
+		return false
+	}
+
+	if returnedAt != nil { //已經有歸還時間，表示已還過了
+		c.JSON(http.StatusBadRequest, gin.H{"error": "此筆借閱已歸還"})
+		return false
+	}
+	return true
 }
